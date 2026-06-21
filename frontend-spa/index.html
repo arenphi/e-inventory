@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-Inventory System - Tugas UAS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/vue-router@4/dist/vue-router.global.js"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans">
+
+    <div id="app">
+        <router-view></router-view>
+    </div>
+
+    <script>
+        const { ref, onMounted } = Vue;
+
+        // --- GLOBAL AXIOS INTERCEPTORS ---
+        axios.interceptors.request.use(config => {
+            const token = localStorage.getItem('token');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        }, error => {
+            return Promise.reject(error);
+        });
+
+        axios.interceptors.response.use(response => response, error => {
+            if (error.response && error.response.status === 401) {
+                alert('Sesi Anda telah habis atau tidak valid! Silakan login kembali.');
+                localStorage.clear();
+                window.location.hash = '#/login';
+            }
+            return Promise.reject(error);
+        });
+
+        // --- 1. KOMPONEN VIEW: LOGIN ---
+        const LoginComponent = {
+            template: `
+            <div class="min-h-screen flex items-center justify-center bg-gray-100 px-4">
+                <div class="max-w-md w-full bg-white p-8 rounded-xl shadow-sm border border-gray-200">
+                    <div class="text-center mb-6">
+                        <span class="text-4xl">📦</span>
+                        <h2 class="text-2xl font-bold text-gray-900 mt-2">E-Inventory Login</h2>
+                        <p class="text-sm text-gray-500">Sistem Manajemen Stok Terintegrasi</p>
+                    </div>
+                    <form @submit.prevent="handleLogin" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Username Admin</label>
+                            <input v-model="username" type="text" required class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Password</label>
+                            <div class="relative mt-1">
+                                <input :type="showPassword ? 'text' : 'password'" v-model="password" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 pr-10">
+                                <button type="button" @click="showPassword = !showPassword" class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-700">
+                                    <span v-if="showPassword">🔒</span>
+                                    <span v-else>👁️</span>
+                                </button>
+                            </div>
+                        </div>
+                        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg transition shadow-sm">
+                            Masuk ke Dashboard
+                        </button>
+                    </form>
+                    <div class="mt-6 text-center text-sm">
+                        <p class="text-gray-600">Belum punya akun admin? 
+                            <router-link to="/register" class="text-blue-600 font-medium hover:underline">Daftar Akun Baru</router-link>
+                        </p>
+                    </div>
+                </div>
+            </div>
+            `,
+            setup() {
+                const username = ref('');
+                const password = ref('');
+                const showPassword = ref(false);
+                const router = VueRouter.useRouter();
+
+                const handleLogin = () => {
+                    axios.post('http://localhost:8080/api/login', {
+                        username: username.value,
+                        password: password.value
+                    })
+                    .then(response => {
+                        console.log('Login response', response);
+                        const resData = response.data;
+                        const token = resData.token || (resData.data && resData.data.token);
+                        const isSuccess = response.status === 200 || resData.status === 200;
+                        console.log('resData', resData, 'token', token, 'isSuccess', isSuccess);
+
+                        if (isSuccess && token) {
+                            localStorage.setItem('isLoggedIn', 'true');
+                            localStorage.setItem('token', token);
+                            
+                            alert('Login Berhasil! Mengalihkan ke Dashboard...');
+                            console.log('Attempting safeNavigate to /dashboard/barang');
+                            window.safeNavigate('/dashboard/barang');
+                        } else {
+                            alert('Gagal Login! Periksa kembali Username dan Password.');
+                        }
+                    })
+                    .catch(error => {
+                        console.error(error);
+                        const msg = error.response && error.response.data.messages ? error.response.data.messages.error : 'Periksa kembali Username dan Password.';
+                        alert('Gagal Login: ' + msg);
+                    });
+                };
+                return { username, password, showPassword, handleLogin };
+            }
+        };
+
+        // --- 2. KOMPONEN VIEW: REGISTRASI (AKUN BARU) ---
+        const RegisterComponent = {
+            template: `
+            <div class="min-h-screen flex items-center justify-center bg-gray-100 px-4">
+                <div class="max-w-md w-full bg-white p-8 rounded-xl shadow-sm border border-gray-200">
+                    <div class="text-center mb-6">
+                        <span class="text-4xl">📝</span>
+                        <h2 class="text-2xl font-bold text-gray-900 mt-2">Buat Akun Admin</h2>
+                        <p class="text-sm text-gray-500">Daftarkan akses operator baru sistem inventaris</p>
+                    </div>
+                    <form @submit.prevent="handleRegister" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Username Baru</label>
+                            <input v-model="username" type="text" required class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Password</label>
+                            <div class="relative mt-1">
+                                <input :type="showPassword ? 'text' : 'password'" v-model="password" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 pr-10">
+                                <button type="button" @click="showPassword = !showPassword" class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-700">
+                                    <span v-if="showPassword">🔒</span>
+                                    <span v-else>👁️</span>
+                                </button>
+                            </div>
+                        </div>
+                        <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2 rounded-lg transition shadow-sm">
+                            Daftar Sekarang
+                        </button>
+                    </form>
+                    <div class="mt-6 text-center text-sm">
+                        <p class="text-gray-600">Sudah punya akun? 
+                            <router-link to="/login" class="text-blue-600 font-medium hover:underline">Login Kembali</router-link>
+                        </p>
+                    </div>
+                </div>
+            </div>
+            `,
+            setup() {
+                const username = ref('');
+                const password = ref('');
+                const showPassword = ref(false);
+                const router = VueRouter.useRouter();
+
+                const handleRegister = () => {
+                    axios.post('http://localhost:8080/api/register', {
+                        username: username.value,
+                        password: password.value
+                    })
+                    .then(() => {
+                        return axios.post('http://localhost:8080/api/login', {
+                            username: username.value,
+                            password: password.value
+                        });
+                    })
+                    .then(loginResponse => {
+                        const token = loginResponse.data.token || (loginResponse.data.data && loginResponse.data.data.token);
+                        if (token) {
+                            localStorage.setItem('isLoggedIn', 'true');
+                            localStorage.setItem('token', token);
+                            alert('Registrasi dan login berhasil! Mengalihkan ke Dashboard...');
+                            window.safeNavigate('/dashboard/barang');
+                        } else {
+                            alert('Registrasi berhasil, namun login otomatis gagal. Silakan login manual.');
+                            router.push('/login');
+                        }
+                    })
+                    .catch(error => {
+                        console.error(error);
+                        const msg = error.response && error.response.data && error.response.data.messages ? error.response.data.messages.error : 'Gagal melakukan registrasi, periksa endpoint backend Anda.';
+                        alert('Gagal Registrasi: ' + msg);
+                    });
+                };
+
+                return { username, password, showPassword, handleRegister };
+            }
+        };
+
+        // --- 3. KOMPONEN VIEW: DASHBOARD PANEL ---
+        const DashboardComponent = {
+            template: `
+            <div class="container mx-auto p-6 max-w-7xl">
+                <header class="flex justify-between items-center mb-8 bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                            <i class="text-blue-600">📦</i> E-Inventory System
+                        </h1>
+                        <p class="text-sm text-gray-500 mt-1">Sistem Manajemen Stok Barang Terintegrasi API</p>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <span class="bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-1.5 rounded-full border border-blue-200">
+                            Frontend SPA Vue.js
+                        </span>
+                        <button @click="handleLogout" class="bg-red-50 hover:bg-red-100 text-red-600 text-xs font-medium px-3 py-1.5 rounded-lg border border-red-200 transition">
+                            Logout 🚪
+                        </button>
+                    </div>
+                </header>
+                <router-view></router-view>
+            </div>
+            `,
+            setup() {
+                const router = VueRouter.useRouter();
+                const handleLogout = () => {
+                    localStorage.clear();
+                    alert('Sesi diakhiri.');
+                    router.push('/login');
+                };
+                return { handleLogout };
+            }
+        };
+
+        // --- 4. KOMPONEN VIEW: TABEL DATA BARANG + MODAL FORM ---
+        const BarangComponent = {
+            template: `
+            <main class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                    <h2 class="font-semibold text-lg text-gray-800">Daftar Stok Inventaris</h2>
+                    <div class="flex gap-2">
+                        <button @click="bukaModalTambah" class="bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition shadow-sm flex items-center gap-1">
+                            ➕ Tambah Barang
+                        </button>
+                        <button @click="ambilData" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition shadow-sm flex items-center gap-2">
+                            🔄 Refresh Data
+                        </button>
+                    </div>
+                </div>
+
+                <div v-if="loading" class="p-12 text-center text-gray-500">
+                    <span class="animate-pulse">Memuat data dari API Server...</span>
+                </div>
+
+                <div v-else class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-gray-100/70 border-b border-gray-200 text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                <th class="px-6 py-4">Kode Barang</th>
+                                <th class="px-6 py-4">Nama Barang</th>
+                                <th class="px-6 py-4">Kategori</th>
+                                <th class="px-6 py-4">Supplier</th>
+                                <th class="px-6 py-4 text-right">Harga</th>
+                                <th class="px-6 py-4 text-center">Stok</th>
+                                <th class="px-6 py-4 text-center">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200 text-sm">
+                            <tr v-for="item in barang" :key="item.id" class="hover:bg-gray-50/70 transition">
+                                <td class="px-6 py-4 font-mono text-xs font-bold text-blue-600">{{ item.kode_barang }}</td>
+                                <td class="px-6 py-4 font-medium text-gray-900">{{ item.nama_barang }}</td>
+                                <td class="px-6 py-4">
+                                    <span class="bg-gray-100 text-gray-700 text-xs px-2.5 py-1 rounded-md border border-gray-200">
+                                        {{ item.nama_kategori || 'Elektronik & Gadget' }}
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 text-gray-600">{{ item.nama_supplier || 'Supplier Utama' }}</td>
+                                <td class="px-6 py-4 text-right font-medium text-gray-900">
+                                    Rp {{ Number(item.harga).toLocaleString('id-ID') }}
+                                </td>
+                                <td class="px-6 py-4 text-center">
+                                    <span :class="item.stok > 20 ? 'bg-green-50 text-green-700 border-green-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'" 
+                                          class="text-xs font-semibold px-2.5 py-1 rounded-full border">
+                                        {{ item.stok }} pcs
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 text-center flex justify-center gap-2">
+                                    <button @click="bukaModalEdit(item)" class="text-blue-600 hover:text-blue-900 text-xs font-medium">Edit</button>
+                                    <span class="text-gray-300">|</span>
+                                    <button @click="hapusBarang(item.id)" class="text-red-600 hover:text-red-900 text-xs font-medium">Hapus</button>
+                                </td>
+                            </tr>
+                            <tr v-if="barang.length === 0">
+                                <td colspan="7" class="px-6 py-12 text-center text-gray-400">Tidak ada data barang yang tersedia.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div v-if="modalTerbuka" class="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                    <div class="bg-white rounded-xl shadow-lg border border-gray-200 max-w-md w-full p-6">
+                        <h3 class="text-lg font-bold text-gray-900 mb-4">{{ isEdit ? 'Edit Data Barang' : 'Tambah Barang Baru' }}</h3>
+                        <form @submit.prevent="simpanBarang" class="space-y-4">
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-600 uppercase">Kode Barang</label>
+                                <input v-model="form.kode_barang" type="text" required class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-600 uppercase">Nama Barang</label>
+                                <input v-model="form.nama_barang" type="text" required class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-600 uppercase">Harga</label>
+                                    <input v-model="form.harga" type="number" required class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-600 uppercase">Stok Awal</label>
+                                    <input v-model="form.stok" type="number" required class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                </div>
+                            </div>
+                            <div class="flex justify-end gap-2 pt-2">
+                                <button type="button" @click="modalTerbuka = false" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition">Batal</button>
+                                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm">Simpan</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </main>
+            `,
+            setup() {
+                const barang = ref([]);
+                const loading = ref(true);
+                const modalTerbuka = ref(false);
+                const isEdit = ref(false);
+                const currentId = ref(null);
+
+                const form = ref({
+                    kode_barang: '',
+                    nama_barang: '',
+                    harga: 0,
+                    stok: 0,
+                    kategori_id: 1,
+                    supplier_id: 1
+                });
+
+                const ambilData = () => {
+                    loading.value = true;
+                    axios.get('http://localhost:8080/api/barang')
+                        .then(response => {
+                            barang.value = Array.isArray(response.data) ? response.data : (response.data.data || []);
+                            loading.value = false;
+                        })
+                        .catch(error => {
+                            console.error("Gagal mengambil data:", error);
+                            loading.value = false;
+                        });
+                };
+
+                const bukaModalTambah = () => {
+                    isEdit.value = false;
+                    currentId.value = null;
+                    form.value = { kode_barang: '', nama_barang: '', harga: 0, stok: 0, kategori_id: 1, supplier_id: 1 };
+                    modalTerbuka.value = true;
+                };
+
+                const bukaModalEdit = (item) => {
+                    isEdit.value = true;
+                    currentId.value = item.id;
+                    form.value = { ...item };
+                    modalTerbuka.value = true;
+                };
+
+                const simpanBarang = () => {
+                    if (isEdit.value) {
+                        axios.put(`http://localhost:8080/api/barang/${currentId.value}`, form.value)
+                            .then(() => {
+                                modalTerbuka.value = false;
+                                ambilData();
+                            }).catch(err => alert("Gagal mengupdate barang!"));
+                    } else {
+                        axios.post('http://localhost:8080/api/barang', form.value)
+                            .then(() => {
+                                modalTerbuka.value = false;
+                                ambilData();
+                            }).catch(err => alert("Gagal menyimpan barang baru!"));
+                    }
+                };
+
+                const hapusBarang = (id) => {
+                    if (confirm("Apakah Anda yakin ingin menghapus data inventaris ini?")) {
+                        axios.delete(`http://localhost:8080/api/barang/${id}`)
+                            .then(() => {
+                                ambilData();
+                            }).catch(err => alert("Gagal menghapus data barang!"));
+                    }
+                };
+
+                onMounted(() => { ambilData(); });
+                return { 
+                    barang, loading, ambilData, modalTerbuka, isEdit, 
+                    form, bukaModalTambah, bukaModalEdit, simpanBarang, hapusBarang 
+                };
+            }
+        };
+
+        // --- 5. CONFIG VUE ROUTER ENGINES ---
+        const routes = [
+            { path: '/', redirect: '/login' },
+            { path: '/login', component: LoginComponent },
+            { path: '/register', component: RegisterComponent }, // Rute Baru ke Registrasi
+            { 
+                path: '/dashboard', 
+                component: DashboardComponent,
+                meta: { requiresAuth: true },
+                children: [
+                    { path: 'barang', component: BarangComponent }
+                ]
+            }
+        ];
+
+        const router = VueRouter.createRouter({
+            history: VueRouter.createWebHashHistory(),
+            routes
+        });
+
+        // Helper navigation yang lebih andal: coba `router.push`, lalu fallback ke hash
+        window.safeNavigate = function(path) {
+            try {
+                router.push(path);
+                console.log('safeNavigate: router.push', path);
+            } catch (e) {
+                console.warn('safeNavigate: router.push failed', e);
+            }
+            try {
+                // pastikan format hash dimulai dengan '#/'
+                const hashPath = (path.startsWith('#') ? path : '#' + (path.startsWith('/') ? path : '/' + path));
+                window.location.hash = hashPath;
+                console.log('safeNavigate: set location.hash to', hashPath);
+            } catch (e) {
+                console.warn('safeNavigate: setting hash failed', e);
+            }
+        };
+
+        router.beforeEach((to, from, next) => {
+            const isAuthenticated = localStorage.getItem('isLoggedIn') === 'true';
+            if (to.meta.requiresAuth && !isAuthenticated) {
+                alert('Akses Ilegal Ditolak! Sila Login Dahulu.');
+                // gunakan safeNavigate agar konsisten
+                window.safeNavigate('/login');
+                next('/login');
+            } else {
+                next();
+            }
+        });
+
+        const app = Vue.createApp({});
+        app.use(router);
+        app.mount('#app');
+    </script>
+</body>
+</html>

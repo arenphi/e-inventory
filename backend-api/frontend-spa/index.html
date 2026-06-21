@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-Inventory App SPA</title>
+    <!-- TailwindCSS Utility-First Modern CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Vue 3, Vue Router, dan Axios CDN -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/vue-router@4/dist/vue-router.global.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans">
+
+    <div id="app">
+        <!-- Render Komponen Berdasarkan Rute Navigasi SPA -->
+        <router-view></router-view>
+    </div>
+
+    <!-- Panggil Script Komponen Modular -->
+    <script src="./components/Login.js"></script>
+    <script src="./components/Dashboard.js"></script>
+    <script src="./components/Barang.js"></script>
+
+    <script>
+        // Setup Axios Interceptors Global
+        axios.defaults.baseURL = 'http://localhost:8080/api/';
+
+        // Request Interceptor: Suntik Token Otomatis dari localStorage
+        axios.interceptors.request.use(config => {
+            const token = localStorage.getItem('token');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+            return config;
+        });
+
+        // Response Interceptor: Tangkap Global Error 401 Unauthorized
+        axios.interceptors.response.use(
+            response => response,
+            error => {
+                if (error.response && error.response.status === 401) {
+                    alert('Sesi Anda berakhir! Silakan login kembali.');
+                    localStorage.clear(); // Bersihkan sisa sesi
+                    window.location.hash = '/login'; // Tendang paksa ke form login
+                }
+                return Promise.reject(error);
+            }
+        );
+
+        // Konfigurasi Router & Navigation Guards Client Security
+        const routes = [
+            { path: '/login', component: LoginComp },
+            { path: '/dashboard', component: DashboardComp, meta: { requiresAuth: true } }, // Proteksi admin
+            { path: '/barang', component: BarangComp, meta: { requiresAuth: true } }
+        ];
+
+        const router = VueRouter.createRouter({
+            history: VueRouter.createWebHashHistory(),
+            routes
+        });
+
+        // Fungsi router.beforeEach() untuk mencegah pengguna ilegal masuk
+        router.beforeEach((to, from, next) => {
+            const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+            if (to.meta.requiresAuth && !isLoggedIn) {
+                next('/login'); // Lempar balik ke login
+            } else {
+                next();
+            }
+        });
+
+        const app = Vue.createApp({});
+        app.use(router);
+        app.mount('#app');
+    </script>
+</body>
+</html>
